@@ -13,6 +13,11 @@ dtype = np.float128 if hasattr(np, 'float128') else np.float64
 
 def lorenz_frac(x):
     """Ecuaciones del sistema caótico de Lorenz, con alta precisión."""
+
+    # alpha=0.98
+    # h=0.01
+    # Lm=1
+
     sigma = dtype(10.0)
     beta = dtype(8.0) / dtype(3.0)
     rho = dtype(28.0)
@@ -20,6 +25,37 @@ def lorenz_frac(x):
         sigma * (x[1] - x[0]),
         rho * x[0] - x[1] - x[0] * x[2],
         -beta * x[2] + x[0] * x[1]
+    ], dtype=dtype)
+
+def rossler_frac(x):
+    """Ecuaciones del sistema caótico de Rössler, con alta precisión."""
+
+    # alpha=0.985
+    # h=0.01
+    # Lm=1
+
+    a = dtype(0.2)
+    b = dtype(0.2)
+    c = dtype(5.7)
+    return np.array([
+        - x[1] - x[2],
+        x[0] + a * x[1],
+        b + x[2]*(x[0] - c)
+    ], dtype=dtype)
+
+def chen_frac(x):
+    """Ecuaciones del sistema caótico de Chen, con alta precisión."""
+    # alpha=0.91
+    # h=0.01
+    # Lm=1
+
+    u = dtype(7.5)
+    v = dtype(1.0)
+    w = dtype(5.0)
+    return np.array([
+        u*(x[1] - x[0]),
+        (w - u)*x[0] - x[0]*x[2] + w*x[1],
+        x[0]*x[1] - v*x[2]
     ], dtype=dtype)
 
 def ho2_system(x):
@@ -93,24 +129,24 @@ def grunwald_letnikov(x, h, h_alpha, k, alpha, x_t, nu, d, mm, decimal, m):
 
 def grafica3d(x, y, z, t):
     """Graficar atractores en 3D, guardar en PDF y mostrar la gráfica."""
-    plt.figure()
-    plt.subplot(2, 2, 1)
+    plt.figure (figsize=(12, 4))
+    plt.subplot(1, 3, 1)
     plt.plot(x, y, "m", lw=0.3)
     plt.xlabel("x")
     plt.ylabel("y")
     
-    plt.subplot(2, 2, 2)
+    plt.subplot(1, 3, 2)
     plt.plot(x, z, "m", lw=0.3)
     plt.xlabel("x")
     plt.ylabel("z")
     
-    plt.subplot(2, 2, 3)
+    plt.subplot(1, 3, 3)
     plt.plot(y, z, "m", lw=0.3)
     plt.xlabel("y")
     plt.ylabel("z")
     
     plt.tight_layout()
-    plt.savefig("lorenz_atractores.pdf", dpi=300, bbox_inches='tight')
+    plt.savefig("lorenz_atractores.pdf", dpi=400, bbox_inches='tight')
     plt.show()  # Se muestra la gráfica al final
     plt.clf()
 
@@ -138,7 +174,7 @@ def grafica4d(x, y, z, w, t):
     plt.ylabel("w")
     
     plt.tight_layout()
-    plt.savefig("atractores.pdf", dpi=300, bbox_inches='tight')
+    plt.savefig("lorenz_atractores_2.pdf", dpi=300, bbox_inches='tight')
     plt.show()  # Se muestra la gráfica al final
     plt.clf()
 
@@ -150,7 +186,7 @@ def main():
     x_0 = np.array([0.1, 0.1, 0.1], dtype=dtype)  # Condición inicial
     
     t_0 = dtype(0.0)
-    t_f = dtype(100.0)
+    t_f = dtype(250.0)
     h = dtype(0.01)
     h_alpha = h ** alpha
     
