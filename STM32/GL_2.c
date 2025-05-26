@@ -7,12 +7,10 @@ char OUTPUT_DIR[256];
 
 /* Tamaños máximos (ajustar según necesidades del sistema). */
 #define MAX_M 10000   // Tamaño máximo de la ventana de memoria
-#define D 3           // Dimensión del sistema (3 para Lorenz)
+#define D 3           // Dimensión del sistema
 
 /*-----------------------------------------------------------------------------
- * Función que calcula las ecuaciones del sistema caótico de Lorenz
- * Entrada : x[3]  (estado actual)
- * Salida  : xdot[3] (derivada en ese punto)
+ * Funciones que calculan las ecuaciones de los sistemas caóticos
  *---------------------------------------------------------------------------*/
 void lorenz_frac(const double x[3], double xdot[3]) {
     double sigma = 10.0;
@@ -21,6 +19,24 @@ void lorenz_frac(const double x[3], double xdot[3]) {
     xdot[0] = sigma * (x[1] - x[0]);
     xdot[1] = rho * x[0] - x[1] - x[0] * x[2];
     xdot[2] = -beta * x[2] + x[0] * x[1];
+}
+
+void chen_frac(const double x[3], double xdot[3]) {
+    double u = 7.5;
+    double v = 1.0;
+    double w = 5.0;
+    xdot[0] = u * (x[1] - x[0]);
+    xdot[1] = (w - u)*x[0] - x[0]*x[2] + w*x[1];
+    xdot[2] = x[0] * x[1] - v * x[2];
+}
+
+void rossler_frac(const double x[3], double xdot[3]) {
+    double a = 0.2;
+    double b = 0.2;
+    double c = 5.7;
+    xdot[0] = -x[1] - x[2];
+    xdot[1] = x[0] + a*x[1];
+    xdot[2] = b + x[2]*(x[0] - c);
 }
 
 /*-----------------------------------------------------------------------------
@@ -54,7 +70,7 @@ void grunwald_letnikov(double alpha, double h, double h_alpha,
 {
     /* Archivo de salida para las variables. */
     char fname[256];
-    snprintf(fname, sizeof(fname), "%slorenz_variables.rnd", OUTPUT_DIR);
+    snprintf(fname, sizeof(fname), "%srossler_variables.rnd", OUTPUT_DIR);
     FILE *fp = fopen(fname, "w");
     if (!fp) {
         fprintf(stderr, "No se pudo abrir el archivo de salida.\n");
@@ -108,7 +124,7 @@ void grunwald_letnikov(double alpha, double h, double h_alpha,
         /* Calculamos la derivada en el estado anterior (i-1).
            El estado anterior en el buffer es (i-1) mod (m+1). */
         int prev_idx = (i - 1) % (m+1);
-        lorenz_frac(xbuf[prev_idx], deriv);
+        rossler_frac(xbuf[prev_idx], deriv);
 
         /* Actualizamos el nuevo estado con la fórmula:
              x[i] = deriv*h_alpha - sum_x
@@ -141,18 +157,19 @@ int main(int argc, char *argv[])
         strncpy(OUTPUT_DIR, argv[1], sizeof(OUTPUT_DIR));
         OUTPUT_DIR[sizeof(OUTPUT_DIR)-1] = '\0';
     } else {
-        strcpy(OUTPUT_DIR, "D:/INAOE/Doctorado/STM32/");
+        strcpy(OUTPUT_DIR, "C:/Users/moren/Desktop/Chaos_codes/Chaos_codes/STM32/");
     }
+    
 
     /* Parámetros de la simulación. */
-    double alpha = 0.98;  // Orden fraccionario
+    double alpha = 0.985;  // Orden fraccionario
     double t0 = 0.0;      // Tiempo inicial
     double tf = 500.0;    // Tiempo final
     double h = 0.01;      // Paso
     double h_alpha = pow(h, alpha);
 
     /* Longitud de memoria. */
-    double Lm = 0.1;
+    double Lm = 1;
     int m = (int)(Lm / h);
     if (m > MAX_M) {
         fprintf(stderr, "Error: m=%d excede MAX_M=%d.\n", m, MAX_M);
@@ -163,7 +180,7 @@ int main(int argc, char *argv[])
     int k = (int)((tf - t0)/h);
 
     /* Estado inicial. */
-    double x0[D] = {0.1, 0.1, 0.1};
+    double x0[D] = {1, 0, 0};
 
     int mm = m;
 

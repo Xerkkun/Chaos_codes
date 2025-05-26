@@ -3,22 +3,45 @@
 #include <math.h>
 
 // Parámetros del problema y constantes
-#define N1 10000            // número de pasos
-#define T 100.0             // tiempo total de simulación
-#define ALPHA 0.9935        // orden fraccionario
-#define LM 10.0             // memoria corta
+#define N1 50000         // número de pasos
+#define T 500.0          // tiempo total de simulación
+#define ALPHA 0.985       // orden fraccionario
+#define LM 1             // memoria corta
 
 // Parámetros del sistema de Lorenz
 #define SIGMA 10.0
 #define RHO   28.0
 #define BETA  (8.0/3.0)
 
+// Parámetros del sistema de Chen
+#define U 7.5
+#define V 1.0
+#define W 5.0
+
+// Parámetros del sistema de Rossler
+#define A 0.2
+#define B 0.2
+#define C 5.7
 
 // Función que calcula el sistema de Lorenz dado (x, y, z)
 void lorenz_system(double x, double y, double z, double *dx, double *dy, double *dz) {
     *dx = SIGMA * (y - x);
     *dy = x * (RHO - z) - y;
     *dz = x * y - BETA * z;
+}
+
+// Función que calcula el sistema de Chen dado (x, y, z)
+void chen_system(double x, double y, double z, double *dx, double *dy, double *dz) {
+    *dx = U * (y - x);
+    *dy = (W - U) * x - x * z + W * y;
+    *dz = x * y - V * z;
+}
+
+// Función que calcula el sistema de Rossler dado (x, y, z)
+void rossler_system(double x, double y, double z, double *dx, double *dy, double *dz) {
+    *dx = -y - z;
+    *dy = x + A * y;
+    *dz = B + z * (x - C);
 }
 
 // Función para calcular el término de memoria (memoria fraccionaria)
@@ -76,26 +99,26 @@ int main(void) {
 
     // Condiciones iniciales
     vtn[0] = 0.0;
-    vxn[0] = -10.0;
-    vyn[0] = -10.0;
-    vzn[0] = 30.0;
+    vxn[0] = 0.1;
+    vyn[0] = 0.1;
+    vzn[0] = 0.1;
 
     // Primer paso (n = 0) sin incluir la memoria
     double x_n = vxn[0], y_n = vyn[0], z_n = vzn[0];
     double dx, dy, dz;
-    lorenz_system(x_n, y_n, z_n, &dx, &dy, &dz);
+    rossler_system(x_n, y_n, z_n, &dx, &dy, &dz);
     double K1x = ha * dx;
     double K1y = ha * dy;
     double K1z = ha * dz;
     
     // K2 evaluado en (x + a21*K1, y + a21*K1, z + a21*K1)
-    lorenz_system(x_n + a21 * K1x, y_n + a21 * K1y, z_n + a21 * K1z, &dx, &dy, &dz);
+    rossler_system(x_n + a21 * K1x, y_n + a21 * K1y, z_n + a21 * K1z, &dx, &dy, &dz);
     double K2x = ha * dx;
     double K2y = ha * dy;
     double K2z = ha * dz;
     
     // K3 evaluado en (x + a31*K2 + a32*K1, …)
-    lorenz_system(x_n + a31 * K2x + a32 * K1x,
+    rossler_system(x_n + a31 * K2x + a32 * K1x,
                   y_n + a31 * K2y + a32 * K1y,
                   z_n + a31 * K2z + a32 * K1z,
                   &dx, &dy, &dz);
@@ -126,8 +149,8 @@ int main(void) {
         double mem_y = memory_fractional(n, tn, vyn, vtn, h, ALPHA, nu);
         double mem_z = memory_fractional(n, tn, vzn, vtn, h, ALPHA, nu);
 
-        // Evaluar el sistema de Lorenz con el término de memoria
-        lorenz_system(x_n, y_n, z_n, &dx, &dy, &dz);
+        // Evaluar el sistema de rossler con el término de memoria
+        rossler_system(x_n, y_n, z_n, &dx, &dy, &dz);
         double f1 = dx - mem_x;
         double f2 = dy - mem_y;
         double f3 = dz - mem_z;
@@ -137,12 +160,12 @@ int main(void) {
 
         // Para K2 y K3, se deben repetir evaluaciones similares en tiempos tn + c2*h y tn + c3*h,
         // usando los estados intermedios. Aquí se muestra una versión simplificada.
-        lorenz_system(x_n + a21 * K1x, y_n + a21 * K1y, z_n + a21 * K1z, &dx, &dy, &dz);
+        rossler_system(x_n + a21 * K1x, y_n + a21 * K1y, z_n + a21 * K1z, &dx, &dy, &dz);
         double K2x = ha * dx;
         double K2y = ha * dy;
         double K2z = ha * dz;
 
-        lorenz_system(x_n + a31 * K2x + a32 * K1x,
+        rossler_system(x_n + a31 * K2x + a32 * K1x,
                       y_n + a31 * K2y + a32 * K1y,
                       z_n + a31 * K2z + a32 * K1z,
                       &dx, &dy, &dz);
@@ -170,7 +193,7 @@ int main(void) {
     // Guardar los resultados en un archivo de texto.
     // En un STM32 deberás reemplazar esta parte por las rutinas de FatFS o la librería de E/S correspondiente.
 
-    FILE *fp = fopen("D:/INAOE/Doctorado/STM32/EFORK_c.txt", "w");
+    FILE *fp = fopen("C:/Users/moren/Desktop/Chaos_codes/Chaos_codes/STM32/rossler_variables_EFORK_C.rnd", "w");
 
     if (fp != NULL) {
 
