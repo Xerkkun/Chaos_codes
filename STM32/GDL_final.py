@@ -93,8 +93,8 @@ def grunwald_letnikov(f, x0, h, alpha, Lm, t_f, system_name, decimal=10):
             doc_sum.append(sum_line)
 
     # Guardar archivos con nombres dinámicos
-    np.savetxt(f"variables_GL_{system_name}_alpha{alpha}.rnd", doc_vars, fmt="%s")
-    np.savetxt(f"sumatoria_GL_{system_name}_alpha{alpha}.rnd", doc_sum, fmt="%s")
+    np.savetxt(f"GL_{system_name}_python.rnd", doc_vars, fmt="%s")
+    np.savetxt(f"sumatoria_GL_{system_name}_python.rnd", doc_sum, fmt="%s")
 
     return x, t
 
@@ -160,7 +160,7 @@ def main():
 
     # Título y nombre de archivo para gráficas
     title = f"{system_name} GL Python α={alpha}"
-    filename = f"{system_name}_atractores_GL_python_alpha{alpha}.pdf"
+    filename = f"{system_name}_atractores_GL_python.pdf"
 
     # Graficar según dimensión
     if x.shape[1] == 3:
