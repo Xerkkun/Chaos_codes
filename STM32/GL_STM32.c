@@ -32,9 +32,9 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 // Ajusta según tu orden fraccionario y longitud de memoria deseada
-#define ALPHA   0.98
+#define ALPHA   0.995
 
-#define DT      0.001
+#define DT      0.005
 #define Lm      10.0
 
 // Parámetros Lorenz
@@ -45,8 +45,6 @@
 // Máximo tamaño de ventana de memoria
 #define MAX_M     10000  // Ajusta según RAM disponible
 
-// Mapeo DAC: [-20..20] => [0..4095]
-#define DAC_SCALE  (4095.0 / 40.0)
 
 // Dimensión del sistema Lorenz
 #define D         3
@@ -138,7 +136,7 @@ static void gl_compute_binomial_coefs(long double alpha, int m);
 static void lorenz_gl_step(void);
 
 // 3) Conversión de float/double a DAC 12 bits (rango [-20..20])
-static uint32_t float_to_dac12(long double val);
+static uint32_t float_to_dac12(long double val, long double minVal, long double maxVal);
 
 // 4) Envío no bloqueante por UART
 static void enviar_mensaje(const char *msg);
@@ -162,7 +160,8 @@ static void gl_compute_binomial_coefs(long double alpha, int m)
     {
         // c[j] = c[j-1] - (c[j-1]*(1+alpha)/j)
     	long double tmp = (1.0 + alpha) / (long double)j;
-    	c_coef[j] = c_coef[j - 1] - (c_coef[j - 1] * tmp);
+    	//c_coef[j] = c_coef[j - 1] - (c_coef[j - 1] * tmp);
+    	c_coef[j] = c_coef[j - 1]*(1 - tmp) ;
 
     }
 }
@@ -174,63 +173,134 @@ static void gl_compute_binomial_coefs(long double alpha, int m)
   *         idx_current marca la posición más reciente en el buffer circular.
   *         Recorremos j=1..m para sumar c_coef[j]* x_hist[idx_prev].
   */
+//static void lorenz_gl_step(void)
+//{
+//    // 1) Índice actual
+//    int i_cur = idx_current;
+//
+//    // 2) Estados presentes
+//    long double x_now = x_hist[i_cur];
+//    long double y_now = y_hist[i_cur];
+//    long double z_now = z_hist[i_cur];
+//
+//    // 3) Derivada local (orden entero)
+//    long double dx_loc = SIGMA*(y_now - x_now);
+//    long double dy_loc = RHO*x_now - y_now - x_now*z_now;
+//    long double dz_loc = -BETA*z_now + x_now*y_now;
+//
+//    // 4) Suma parcial usando coeficientes binomiales
+//    long double sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
+//
+//    // Aquí la CLAVE: solo sumas hasta donde tengas pasos válidos
+//    // (si step_count < m, no sumas todos los coeficientes)
+//    int max_j = (step_count < m) ? step_count : m;
+//
+//    int i = step_count;
+//
+//    for(int j = 1; j <= max_j; j++)
+//    {
+//        int idx_prev = (i_cur - j + (MAX_M+1)) % (MAX_M+1);
+//        sum_x += c_coef[j] * x_hist[idx_prev];
+//        sum_y += c_coef[j] * y_hist[idx_prev];
+//        sum_z += c_coef[j] * z_hist[idx_prev];
+//    }
+//
+//
+//    long double dt_alpha = pow(DT, ALPHA);
+//    long double x_new    = dt_alpha*dx_loc - sum_x;
+//    long double y_new    = dt_alpha*dy_loc - sum_y;
+//    long double z_new    = dt_alpha*dz_loc - sum_z;
+//
+//    // Avanzas en el buffer circular
+//    i_cur = (i_cur + 1) % (MAX_M+1);
+//    x_hist[i_cur] = x_new;
+//    y_hist[i_cur] = y_new;
+//    z_hist[i_cur] = z_new;
+//    idx_current   = i_cur;
+//
+//    // 5) Incrementa el contador de pasos
+//    step_count++;
+//}
+
 static void lorenz_gl_step(void)
 {
-    // 1) Índice actual
-    int i_cur = idx_current;
+    int i = step_count + 1;  // step_count se inició en 0; ahora i va incrementando
 
-    // 2) Estados presentes
-    long double x_now = x_hist[i_cur];
-    long double y_now = y_hist[i_cur];
-    long double z_now = z_hist[i_cur];
+    // Determinamos cuántos pasos atrás sumamos
+    // (exactamente como "if i < m => pasos_atras=i else => m")
+    int pasos_atras = (i < m) ? i : m;
 
-    // 3) Derivada local (orden entero)
-    long double dx_loc = SIGMA*(y_now - x_now);
-    long double dy_loc = RHO*x_now - y_now - x_now*z_now;
-    long double dz_loc = -BETA*z_now + x_now*y_now;
+    // Inicializamos sum_x, sum_y, sum_z en 0
+    long double sum_x = 0.0L;
+    long double sum_y = 0.0L;
+    long double sum_z = 0.0L;
 
-    // 4) Suma parcial usando coeficientes binomiales
-    long double sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
-
-    // Aquí la CLAVE: solo sumas hasta donde tengas pasos válidos
-    // (si step_count < m, no sumas todos los coeficientes)
-    int max_j = (step_count < m) ? step_count : m;
-
-    for(int j = 1; j <= max_j; j++)
+    // Acumulamos c_coef[j] * xbuf[i-j], ybuf[i-j], zbuf[i-j]
+    // usando índice circular => (i - j) % (m+1).
+    for(int j = 1; j <= pasos_atras; j++)
     {
-        int idx_prev = (i_cur - j + (MAX_M+1)) % (MAX_M+1);
-        sum_x += c_coef[j] * x_hist[idx_prev];
-        sum_y += c_coef[j] * y_hist[idx_prev];
-        sum_z += c_coef[j] * z_hist[idx_prev];
+        int idx_old = ( (i - j) + (m+1) ) % (m+1);
+        sum_x += c_coef[j] * x_hist[idx_old];
+        sum_y += c_coef[j] * y_hist[idx_old];
+        sum_z += c_coef[j] * z_hist[idx_old];
     }
 
+    // Calculamos la derivada en el estado anterior (i-1)
+    // "prev_idx" => (i - 1) % (m+1).
+    int prev_idx = ((i - 1) + (m+1)) % (m+1);
+
+    long double x_prev = x_hist[prev_idx];
+    long double y_prev = y_hist[prev_idx];
+    long double z_prev = z_hist[prev_idx];
+
+    // Derivada local (tipo Lorenz entero)
+    long double dx_loc = SIGMA*(y_prev - x_prev);
+    long double dy_loc = RHO*x_prev - y_prev - x_prev*z_prev;
+    long double dz_loc = -BETA*z_prev + x_prev*y_prev;
+
+    // Multiplicamos por (Delta_t)^alpha
     long double dt_alpha = pow(DT, ALPHA);
-    long double x_new    = dt_alpha*dx_loc - sum_x;
-    long double y_new    = dt_alpha*dy_loc - sum_y;
-    long double z_new    = dt_alpha*dz_loc - sum_z;
 
-    // Avanzas en el buffer circular
-    i_cur = (i_cur + 1) % (MAX_M+1);
-    x_hist[i_cur] = x_new;
-    y_hist[i_cur] = y_new;
-    z_hist[i_cur] = z_new;
-    idx_current   = i_cur;
+    // Actualizamos el nuevo estado con: x[i] = deriv*h_alpha - sum_x
+    // análogo a: x_new = dx_loc*dt_alpha - sum_x
+    long double x_new = dx_loc * dt_alpha - sum_x;
+    long double y_new = dy_loc * dt_alpha - sum_y;
+    long double z_new = dz_loc * dt_alpha - sum_z;
 
-    // 5) Incrementa el contador de pasos
+    // Índice circular donde va el NUEVO estado = i % (m+1).
+    int current_idx = i % (m+1);
+    x_hist[current_idx] = x_new;
+    y_hist[current_idx] = y_new;
+    z_hist[current_idx] = z_new;
+
+    // Avanzamos en nuestro “contador de pasos”.
     step_count++;
+
+    // Si quieres que 'idx_current' siempre apunte al estado "actual",
+    // puedes hacerlo:
+    idx_current = current_idx;
 }
 
 
 /**
-  * @brief  Convierte un valor en [-20..20] a 12 bits [0..4095].
-  */
-static uint32_t float_to_dac12(long double val)
+ * @brief Mapea val en [minVal, maxVal] a [0, 4095] para DAC de 12 bits.
+ */
+static uint32_t float_to_dac12(long double val, long double minVal, long double maxVal)
 {
-	long double shifted = val + 20.0;   // -20 => 0, +20 => 40
-	long double scaled  = shifted * DAC_SCALE;
-    if(scaled < 0.0)    scaled = 0.0;
-    if(scaled > 4095.0) scaled = 4095.0;
-    return (uint32_t)scaled;
+    // Evita división por cero si maxVal == minVal
+    long double rango = maxVal - minVal;
+    if (fabsl(rango) < 1e-16) {
+        rango = 1e-16;
+    }
+
+    // Mapeo lineal
+    long double scale = (val - minVal) * (4095.0L / rango);
+
+    // Saturación en [0, 4095]
+    if (scale < 0.0L)    scale = 0.0L;
+    if (scale > 4095.0L) scale = 4095.0L;
+
+    return (uint32_t) scale;
 }
 
 
@@ -327,7 +397,7 @@ int main(void)
 
 
     // Luego pones tu condición inicial sólo en [0]
-    long double x0 = 0.01, y0 = 0.01, z0 = 0.01;
+    long double x0 = 0.1, y0 = 0.1, z0 = 0.1;
     x_hist[0] = x0;
     y_hist[0] = y0;
     z_hist[0] = z0;
@@ -363,10 +433,14 @@ int main(void)
     		      long double z = z_hist[idx_current];
 
     		      // 3) Actualiza DAC
-    		      uint32_t dac_x = float_to_dac12(x);
-    		      uint32_t dac_y = float_to_dac12(y);
+    		      uint32_t dac_x = float_to_dac12(x, -20.0L, 20.0L);
+    		      uint32_t dac_y = float_to_dac12(y, -25.0L, 25.0L);
+    		      //uint32_t dac_z = float_to_dac12(z, 15.0L, 50.0L);
+
+
     		      HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dac_x);
     		      HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dac_y);
+
 
     		      // 4) Envía por UART (sin bloquear)
     		      char buf[60];

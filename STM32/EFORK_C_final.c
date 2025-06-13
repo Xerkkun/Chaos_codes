@@ -57,11 +57,11 @@ int main(void) {
     int N1, nu;
 
     // Menú de selección
-    printf("Seleccione el sistema caótico a simular:\n");
+    printf("Seleccione el sistema caotico a simular:\n");
     printf("1) Lorenz\n");
     printf("2) Rossler\n");
     printf("3) Chen\n");
-    printf("Opción (1/2/3): ");
+    printf("Opcion (1/2/3): ");
     scanf("%d", &opcion);
 
     // Asignar función según selección
@@ -70,7 +70,7 @@ int main(void) {
         case 1: strcpy(sistema, "lorenz");   system_func = lorenz_system; break;
         case 2: strcpy(sistema, "rossler");  system_func = rossler_system; break;
         case 3: strcpy(sistema, "chen");     system_func = chen_system; break;
-        default: printf("Selección inválida.\n"); return 1;
+        default: printf("Seleccion invalida.\n"); return 1;
     }
 
     // Captura interactiva de parámetros
@@ -86,7 +86,7 @@ int main(void) {
     printf("Ingrese tiempo final t_f: ");
     scanf("%lf", &t_f);
 
-    printf("Ingrese condiciones iniciales x0,y0,z0 (ejemplo: 0.1 0.1 0.1): ");
+    printf("Ingrese condiciones iniciales x0 y0 z0 (ejemplo: 0.1 0.1 0.1): ");
     scanf("%lf %lf %lf", &x0, &y0, &z0);
 
     // Calculo de parámetros derivados
@@ -185,9 +185,9 @@ int main(void) {
         x_n = x_n1; y_n = y_n1; z_n = z_n1;
     }
 
-    // Guardar resultados en .dat
+    // Guardar resultados en .txt
     char filename[128];
-    snprintf(filename, sizeof(filename), "%s_EFORK_alpha%.3f.dat", sistema, alpha);
+    snprintf(filename, sizeof(filename), "EFORK_%s_c.txt", sistema);
     FILE *fp = fopen(filename, "w");
     if (fp != NULL) {
         for (int i = 0; i <= N1; i++)
@@ -197,6 +197,7 @@ int main(void) {
     } else {
         printf("Error al guardar el archivo.\n");
     }
+
 
     free(vtn); free(vxn); free(vyn); free(vzn);
     return 0;
