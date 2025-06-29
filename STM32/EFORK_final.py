@@ -2,7 +2,8 @@ import numpy as np
 from scipy.special import gamma
 import matplotlib.pyplot as plt
 
-dtype = np.float64
+# Seleccionar tipo de dato de mayor precisión disponible
+dtype = np.float128 if hasattr(np, 'float128') else np.float64
 
 def lorenz_system(x, y, z):
     sigma, rho, beta = 10.0, 28.0, 8.0/3.0
@@ -30,17 +31,20 @@ def memory_fractional(k, t, arr, vtn, h, alpha, nu):
     return sum_ / (h * gamma_term)
 
 def main():
-    dic = {'1':'lorenz','2':'rossler','3':'chen'}
-    print("Seleccione sistema EFORK a simular:")
-    for k,v in dic.items(): print(f"  {k}: {v.capitalize()}")
+    """Función principal: menú y simulación."""
+    # Definir menú de sistemas
+    tipos = {'1':'Lorenz','2':'Rossler','3':'Chen'}
+    print("Seleccione sistema a simular:")
+    for key, name in tipos.items(): print(f"  {key}: {name}")
     choice = input("Opción (1/2/3): ")
-    system_key = dic.get(choice)
+    system_key = tipos.get(choice)
     if not system_key:
         print("Selección inválida.")
         return
-    system_func = {'lorenz':lorenz_system,'rossler':rossler_system,'chen':chen_system}[system_key]
 
-    # Parámetros usuario
+    system_func = {'Lorenz':lorenz_system,'Rossler':rossler_system,'Chen':chen_system}[system_key]
+
+    # Solicitar parámetros al usuario
     alpha = dtype(float(input("Ingrese orden fraccionario alpha: ")))
     h     = dtype(float(input("Ingrese paso h: ")))
     Lm    = dtype(float(input("Ingrese longitud de memoria Lm: ")))

@@ -5,38 +5,17 @@ from mpl_toolkits.mplot3d import Axes3D  # Para gráficas 3D
 # Seleccionar tipo de dato de mayor precisión disponible
 dtype = np.float128 if hasattr(np, 'float128') else np.float64
 
-def lorenz_frac(x):
-    """Ecuaciones del sistema caótico de Lorenz."""
-    sigma = dtype(10.0)
-    beta  = dtype(8.0) / dtype(3.0)
-    rho   = dtype(28.0)
-    return np.array([
-        sigma * (x[1] - x[0]),
-        rho * x[0] - x[1] - x[0] * x[2],
-        -beta * x[2] + x[0] * x[1]
-    ], dtype=dtype)
+def lorenz_system(x, y, z):
+    sigma, rho, beta = 10.0, 28.0, 8.0/3.0
+    return np.array([sigma*(y-x), x*(rho-z)-y, x*y-beta*z])
 
-def rossler_frac(x):
-    """Ecuaciones del sistema caótico de Rössler."""
-    a = dtype(0.2)
-    b = dtype(0.2)
-    c = dtype(5.7)
-    return np.array([
-        -x[1] - x[2],
-        x[0] + a * x[1],
-        b + x[2] * (x[0] - c)
-    ], dtype=dtype)
+def rossler_system(x, y, z):
+    a, b, c = 0.2, 0.2, 5.7
+    return np.array([-y-z, x+a*y, b+z*(x-c)])
 
-def chen_frac(x):
-    """Ecuaciones del sistema caótico de Chen."""
-    u = dtype(7.5)
-    v = dtype(1.0)
-    w = dtype(5.0)
-    return np.array([
-        u * (x[1] - x[0]),
-        (w - u) * x[0] - x[0] * x[2] + w * x[1],
-        x[0] * x[1] - v * x[2]
-    ], dtype=dtype)
+def chen_system(x, y, z):
+    u, v, w = 7.5, 1.0, 5.0
+    return np.array([u*(y-x), (w-u)*x-x*z+w*y, x*y-v*z])
 
 def binomial_coef(alpha, mm, decimal):
     """
@@ -98,36 +77,6 @@ def grunwald_letnikov(f, x0, h, alpha, Lm, t_f, system_name, decimal=10):
 
     return x, t
 
-def plot3d(x, y, z, filename):
-    """Graficar proyecciones 2D y atractor 3D."""
-    plt.figure(figsize=(12, 4))
-    # Proyección xy
-    plt.subplot(1, 3, 1)
-    plt.plot(x, y, 'm', lw=0.3)
-    plt.xlabel('x'); plt.ylabel('y')
-    # Proyección xz
-    plt.subplot(1, 3, 2)
-    plt.plot(x, z, 'm', lw=0.3)
-    plt.xlabel('x'); plt.ylabel('z')
-    # Proyección yz
-    plt.subplot(1, 3, 3)
-    plt.plot(y, z, 'm',lw=0.3)
-    plt.xlabel('y'); plt.ylabel('z')
-
-    plt.tight_layout()
-    plt.savefig(filename, dpi=400, bbox_inches='tight')
-    plt.show()
-    plt.clf()
-
-    # Atractor completo en 3D1
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot(x, y, z, 'm', lw=0.2)
-    ax.set_xlabel('x'); ax.set_ylabel('y'); ax.set_zlabel('z')
-    plt.savefig(filename.replace('.pdf', '_3D.pdf'),dpi=400,bbox_inches= 'tight')
-    plt.show()
-    plt.clf()
-
 def main():
     """Función principal: menú y simulación."""
     # Definir menú de sistemas
@@ -135,38 +84,51 @@ def main():
     print("Seleccione sistema a simular:")
     for key, name in tipos.items(): print(f"  {key}: {name}")
     choice = input("Opción (1/2/3): ")
-    system_name = tipos.get(choice)
-    if system_name is None:
+    system_key = tipos.get(choice)
+    if system_key is None:
         print("Selección inválida.")
         return
 
-    # Mapear función según selección
-    f = {
-        'Lorenz': lorenz_frac,
-        'Rossler': rossler_frac,
-        'Chen': chen_frac
-    }[system_name]
+    system_func = {'Lorenz':lorenz_system,'Rossler':rossler_system,'Chen':chen_system}[system_key]
+
 
     # Solicitar parámetros al usuario
     alpha   = dtype(float(input("Ingrese orden fraccionario alpha: ")))
     h       = dtype(float(input("Ingrese paso h: ")))
     Lm      = dtype(float(input("Ingrese longitud de memoria Lm: ")))
     t_f     = dtype(float(input("Ingrese tiempo final t_f: ")))
-    x0_str  = input("Ingrese condiciones iniciales separadas por coma: ")
-    x0      = np.array([float(val) for val in x0_str.split(',')], dtype=dtype)
+    x0_str = input("Ingrese condiciones iniciales x0 y0 z0 (separadas por espacios): ")
+    x0_arr = np.array([float(val) for val in x0_str.strip().split()], dtype=dtype)
+    x0, y0, z0 = x0_arr
 
     # Ejecutar método GL y obtener resultados
-    x, t = grunwald_letnikov(f, x0, h, alpha, Lm, t_f, system_name)
+    x, t = grunwald_letnikov(system_func, x0, h, alpha, Lm, t_f, system_key)
 
     # Título y nombre de archivo para gráficas
-    title = f"{system_name} GL Python α={alpha}"
-    filename = f"{system_name}_atractores_GL_python.pdf"
+    pdf2d = f"{system_key}_atractores_EFORK_python.pdf"
+    pdf3d = f"{system_key}_atractores_EFORK_3D_python.pdf"
 
-    # Graficar según dimensión
-    if x.shape[1] == 3:
-        plot3d(x[:,0], x[:,1], x[:,2], filename)
-    else:
-        print("Gráfica 4D no implementada en este menú.")
+
+    # Gráficas 2D
+    plt.figure(figsize=(12, 4))
+    plt.subplot(1, 3, 1); plt.plot(x[:,0], x[:,1], 'm', lw=0.3); plt.xlabel('x'); plt.ylabel('y')
+    plt.subplot(1, 3, 2); plt.plot(x[:,0], x[:,2], 'm', lw=0.3); plt.xlabel('x'); plt.ylabel('z')
+    plt.subplot(1, 3, 3); plt.plotx(x[:,1], x[:,2], 'm', lw=0.3); plt.xlabel('y'); plt.ylabel('z')
+    plt.tight_layout()
+    plt.savefig(pdf2d, dpi=400, bbox_inches='tight')
+    print(f"Gráfica 2D guardada en: {pdf2d}")
+    plt.show()
+
+    # Gráfica 3D
+    from mpl_toolkits.mplot3d import Axes3D
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot(x[:,0], x[:,1], x[:,2], 'm', lw=0.2)
+    ax.set_xlabel('x'); ax.set_ylabel('y'); ax.set_zlabel('z')
+    plt.savefig(pdf3d, dpi=400, bbox_inches='tight')
+    print(f"Gráfica 3D guardada en: {pdf3d}")
+    plt.show()
+
 
 if __name__ == '__main__':
     main()
