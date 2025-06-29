@@ -127,13 +127,13 @@ def main():
 
     # Guardar resultados
     datos = np.column_stack((vtn, vxn, vyn, vzn))
-    out_txt = f"EFORK_{system_key}_c.txt"
+    out_txt = f"EFORK_{system_key}_p.dat"
     np.savetxt(out_txt, datos, delimiter='\t', header='t\tx\ty\tz', comments='')
     print(f"Resultados guardados en: {out_txt}")
 
     # Nombres de PDF
-    pdf2d = f"{system_key}_atractores_EFORK_python.pdf"
-    pdf3d = f"{system_key}_atractores_EFORK_3D_python.pdf"
+    pdf2d = f"{system_key}_EFORK_p.pdf"
+    pdf3d = f"{system_key}_EFORK_3D_p.pdf"
 
     # Gráficas 2D
     plt.figure(figsize=(12, 4))
