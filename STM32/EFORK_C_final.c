@@ -187,7 +187,7 @@ int main(void) {
 
     // Guardar resultados en .txt
     char filename[128];
-    snprintf(filename, sizeof(filename), "EFORK_%s_c.txt", sistema);
+    snprintf(filename, sizeof(filename), "EFORK_%s_c.dat", sistema);
     FILE *fp = fopen(filename, "w");
     if (fp != NULL) {
         for (int i = 0; i <= N1; i++)

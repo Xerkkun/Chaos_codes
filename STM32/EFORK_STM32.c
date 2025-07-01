@@ -1,24 +1,23 @@
 /* USER CODE BEGIN Header */
 /**
- Archivo: main.c - Método de Grünwald–Letnikov (orden fraccionario) en STM32
+ Archivo: main.c - EFORK (orden fraccionario) en STM32
  Salida a DAC (canales 1 y 2) y envío UART asíncrono (interrupción).
 **/
 
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
+ *   ******************************************************************************
   * @file           : main.c
-  * @brief          : Grunwald–Letnikov para Lorenz (orden fraccionario) en STM32F7,
+  * @brief          : EFORK para Lorenz (orden fraccionario) en STM32F7,
   *                   salidas DAC1/DAC2 y UART asíncrona (IT).
   ******************************************************************************
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
-#include "main.h"
-#include "string.h"
-#include "math.h"
-#include "stdio.h"
-
+#include "main.h"          
+#include <math.h>
+#include <string.h>
+#include <stdio.h>
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -44,7 +43,17 @@
 // Máximo tamaño de ventana de memoria
 #define MAX_M     10000  // Ajusta según RAM disponible
 
-
+/* Parámetros de los tres sistemas (Lorenz, Rossler, Chen) */
+/* #define SIGMA   10.0
+#define RHO     28.0
+#define BETA    (8.0/3.0)
+#define U       7.5
+#define V       1.0
+#define W       5.0
+#define A       0.2
+#define BB      0.2      //“B” ya reservada por HAL 
+#define CC      5.7 
+*/
 // Dimensión del sistema Lorenz
 #define D         3
 /* USER CODE END PD */
@@ -89,19 +98,20 @@ DMA_HandleTypeDef hdma_usart3_rx;
 DMA_HandleTypeDef hdma_usart3_tx;
 
 PCD_HandleTypeDef hpcd_USB_OTG_FS;
-
 /* USER CODE BEGIN PV */
 
 // Longitud de memoria (en segundos), y número de muestras m = Lm / DT
 static int    m = 0;      // Se calculará en el main
 
 // Coeficientes binomiales c[j], 0 <= j <= m
-static long double c_coef[MAX_M + 1];
+//static long double c_coef[MAX_M + 1];
 
 // Historial de las variables x, y, z (memoria corta)
 static long double x_hist[MAX_M + 1];
 static long double y_hist[MAX_M + 1];
 static long double z_hist[MAX_M + 1];
+
+static long double t_hist[MAX_M+1];                // NUEVO (para EFORK)
 
 // Índice circular para indicar la posición más reciente en el historial
 static int idx_current = 0;
@@ -112,7 +122,6 @@ static volatile uint8_t uart_busy = 0; // 0=libre, 1=ocupada
 
 // Contador de pasos de integración
 static int step_count = 0;
-
 
 /* USER CODE END PV */
 
@@ -129,10 +138,10 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 
 // 1) Función para calcular coeficientes binomiales para GL
-static void gl_compute_binomial_coefs(long double alpha, int m);
+//static void gl_compute_binomial_coefs(long double alpha, int m);
 
-// 2) Paso de integración del sistema de Lorenz usando Grünwald–Letnikov (memoria corta)
-static void lorenz_gl_step(void);
+// 2) Paso de integración del sistema de Lorenz usando EFORK (memoria corta)
+//static void lorenz_efork_step(void);
 
 // 3) Conversión de float/double a DAC 12 bits (rango [-20..20])
 static uint32_t float_to_dac12(long double val, long double minVal, long double maxVal);
@@ -144,16 +153,18 @@ static void enviar_mensaje(const char *msg);
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart);
 
 /* USER CODE END PFP */
-
 /* Private user code ---------------------------------------------------------*/
+// ==============================================================================
+// No se usa para EFORK, modificar para lo que se necesite calcular para este nuevo método.
 /* USER CODE BEGIN 0 */
 /**
   * @brief  Calcula los coeficientes binomiales c[j] para la aproximación
   *         de Grünwald–Letnikov con una relación recurrente.
   * @note   Solo se hace una vez al inicio, para j=0..m.
   */
-static void gl_compute_binomial_coefs(long double alpha, int m)
-{
+
+//static void gl_compute_binomial_coefs(long double alpha, int m)
+/* {
     c_coef[0] = 1.0;
     for(int j = 1; j <= m; j++)
     {
@@ -163,131 +174,138 @@ static void gl_compute_binomial_coefs(long double alpha, int m)
     	c_coef[j] = c_coef[j - 1]*(1 - tmp) ;
 
     }
+} */
+//==================================================================================
+/***** Memoria fraccional (ventana corta m) *****/
+static long double memory_fractional(int k,long double t,
+                                     const long double *v,const long double *tt)
+{
+    if(k==0) return 0.0L;
+    long double gamma_term = tgammal(2.0L - ALPHA);
+    int start = (k-m>0)? (k-m):0;
+    long double sum = 0.0L;
+    for(int j=start;j<k;j++){
+        long double vdiff = v[j+1]-v[j];
+        long double t0 = tt[j];
+        long double t1 = tt[j+1];
+        long double f1 = powl(t - t0, 1.0L-ALPHA);
+        long double f2 = powl(t - t1, 1.0L-ALPHA);
+        sum += vdiff*(f1-f2);
+    }
+    return sum/(DT*gamma_term);
 }
 
-/**
-  * @brief  Calcula un paso de Lorenz fraccionario usando Grünwald–Letnikov (memoria corta).
-  *         x_{n+1} = x_{n} + dt^alpha * dx - (suma de estados pasados)
-  * @note   Los arreglos x_hist, y_hist, z_hist contienen las muestras pasadas.
-  *         idx_current marca la posición más reciente en el buffer circular.
-  *         Recorremos j=1..m para sumar c_coef[j]* x_hist[idx_prev].
-  */
-
-
-static void lorenz_gl_step(void)
+/***** Paso EFORK (RK3‑α) *****/
+static void efork_step(void)
 {
-    int i = step_count + 1;  // step_count se inició en 0; ahora i va incrementando
-
-    // Determinamos cuántos pasos atrás sumamos
-    // (exactamente como "if i < m => pasos_atras=i else => m")
-    int pasos_atras = (i < m) ? i : m;
-
-    // Inicializamos sum_x, sum_y, sum_z en 0
-    long double sum_x = 0.0L;
-    long double sum_y = 0.0L;
-    long double sum_z = 0.0L;
-
-    // Acumulamos c_coef[j] * xbuf[i-j], ybuf[i-j], zbuf[i-j]
-    // usando índice circular => (i - j) % (m+1).
-    for(int j = 1; j <= pasos_atras; j++)
-    {
-        int idx_old = ( (i - j) + (m+1) ) % (m+1);
-        sum_x += c_coef[j] * x_hist[idx_old];
-        sum_y += c_coef[j] * y_hist[idx_old];
-        sum_z += c_coef[j] * z_hist[idx_old];
+    /* --------- calcular constantes EFORK una sola vez --------- */
+    static int init = 0;
+    static long double ha,g1,g2,g3,a21,a31,a32,w1,w2,w3;
+    if(!init){
+        g1 = tgammal(1.0L+ALPHA);
+        g2 = tgammal(1.0L+2.0L*ALPHA);
+        g3 = tgammal(1.0L+3.0L*ALPHA);
+        ha = powl(DT,ALPHA);
+        a21 = 1.0L/(2.0L*g1*g1);
+        a31 = (g1*g1*tgammal(2*ALPHA+1)+2.0L*tgammal(2*ALPHA+1)*tgammal(2*ALPHA+1)-tgammal(3*ALPHA+1)) /
+               (4.0L*g1*g1*(2.0L*tgammal(2*ALPHA+1)*tgammal(2*ALPHA+1)-tgammal(3*ALPHA+1)));
+        a32 = -tgammal(2*ALPHA+1)/(4.0L*(2.0L*tgammal(2*ALPHA+1)*tgammal(2*ALPHA+1)-tgammal(3*ALPHA+1)));
+        w1 = (8.0L*powl(g1,3)*powl(tgammal(1+2*ALPHA),2) - 6.0L*powl(g1,3)*tgammal(1+3*ALPHA) + tgammal(1+2*ALPHA)*tgammal(1+3*ALPHA)) /
+              (g1*tgammal(1+2*ALPHA)*tgammal(1+3*ALPHA));
+        w2 = 2.0L*g1*g1*(4.0L*powl(tgammal(1+2*ALPHA),2) - tgammal(1+3*ALPHA)) /
+              (tgammal(1+2*ALPHA)*tgammal(1+3*ALPHA));
+        w3 = -8.0L*g1*g1*(2.0L*powl(tgammal(1+2*ALPHA),2) - tgammal(1+3*ALPHA)) /
+               (tgammal(1+2*ALPHA)*tgammal(1+3*ALPHA));
+        init = 1;
     }
 
-    // Calculamos la derivada en el estado anterior (i-1)
-    // "prev_idx" => (i - 1) % (m+1).
-    int prev_idx = ((i - 1) + (m+1)) % (m+1);
+    /* ------ estado actual ------ */
+    long double t_n = t_hist[idx_current];
+    long double x_n = x_hist[idx_current];
+    long double y_n = y_hist[idx_current];
+    long double z_n = z_hist[idx_current];
 
-    long double x_prev = x_hist[prev_idx];
-    long double y_prev = y_hist[prev_idx];
-    long double z_prev = z_hist[prev_idx];
+    int k = step_count;
+    long double mem_x = memory_fractional(k,t_n,x_hist,t_hist);
+    long double mem_y = memory_fractional(k,t_n,y_hist,t_hist);
+    long double mem_z = memory_fractional(k,t_n,z_hist,t_hist);
 
-    // Derivada local (tipo Lorenz entero)
-    long double dx_loc = SIGMA*(y_prev - x_prev);
-    long double dy_loc = RHO*x_prev - y_prev - x_prev*z_prev;
-    long double dz_loc = -BETA*z_prev + x_prev*y_prev;
+    long double dx,dy,dz;
+    /* K1 */
+    system_rhs(x_n,y_n,z_n,&dx,&dy,&dz);
+    long double K1x = ha*(dx - mem_x);
+    long double K1y = ha*(dy - mem_y);
+    long double K1z = ha*(dz - mem_z);
+    /* K2 */
+    system_rhs(x_n + a21*K1x, y_n + a21*K1y, z_n + a21*K1z, &dx,&dy,&dz);
+    long double K2x = ha*dx;
+    long double K2y = ha*dy;
+    long double K2z = ha*dz;
+    /* K3 */
+    system_rhs(x_n + a31*K2x + a32*K1x,
+               y_n + a31*K2y + a32*K1y,
+               z_n + a31*K2z + a32*K1z, &dx,&dy,&dz);
+    long double K3x = ha*dx;
+    long double K3y = ha*dy;
+    long double K3z = ha*dz;
 
-    // Multiplicamos por (Delta_t)^alpha
-    long double dt_alpha = pow(DT, ALPHA);
+    /* nuevo estado */
+    long double x_np1 = x_n + w1*K1x + w2*K2x + w3*K3x;
+    long double y_np1 = y_n + w1*K1y + w2*K2y + w3*K3y;
+    long double z_np1 = z_n + w1*K1z + w2*K2z + w3*K3z;
 
-    // Actualizamos el nuevo estado con: x[i] = deriv*h_alpha - sum_x
-    // análogo a: x_new = dx_loc*dt_alpha - sum_x
-    long double x_new = dx_loc * dt_alpha - sum_x;
-    long double y_new = dy_loc * dt_alpha - sum_y;
-    long double z_new = dz_loc * dt_alpha - sum_z;
-
-    // Índice circular donde va el NUEVO estado = i % (m+1).
-    int current_idx = i % (m+1);
-    x_hist[current_idx] = x_new;
-    y_hist[current_idx] = y_new;
-    z_hist[current_idx] = z_new;
-
-    // Avanzamos en nuestro “contador de pasos”.
+    /* guardar en buffer */
+    int next = (idx_current+1)%(MAX_M+1);
+    t_hist[next] = t_n + DT;
+    x_hist[next] = x_np1;
+    y_hist[next] = y_np1;
+    z_hist[next] = z_np1;
+    idx_current  = next;
     step_count++;
 
-    // Si quieres que 'idx_current' siempre apunte al estado "actual",
-    // puedes hacerlo:
-    idx_current = current_idx;
+    /* salidas */
+    HAL_DAC_SetValue(&hdac,DAC_CHANNEL_1,DAC_ALIGN_12B_R,float_to_dac12(x_np1,-25.0L,25.0L));
+    HAL_DAC_SetValue(&hdac,DAC_CHANNEL_2,DAC_ALIGN_12B_R,float_to_dac12(y_np1,-30.0L,30.0L));
+    char buf[90];
+    snprintf(buf,sizeof(buf),"EFORK -> x=% .3Lf, y=% .3Lf, z=% .3Lf\r\n",x_np1,y_np1,z_np1);
+    enviar_msj(buf);
 }
 
+/***** UART helper (igual que en GL salvo nombre función) *****/
+static void enviar_msj(const char *msg) { /* = copia igual que en GL, solo cambia nombre */ }
 
-/**
- * @brief Mapea val en [minVal, maxVal] a [0, 4095] para DAC de 12 bits.
- */
-static uint32_t float_to_dac12(long double val, long double minVal, long double maxVal)
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart){ /* = igual que en GL */ }
+
+/***** float_to_dac12 = igual que en GL *****/
+
+/* ---------- 6. main() : SOLO las líneas distintas ---------- */
+int main(void)
 {
-    // Evita división por cero si maxVal == minVal
-    long double rango = maxVal - minVal;
-    if (fabsl(rango) < 1e-16) {
-        rango = 1e-16;
-    }
+    HAL_Init();
+    SystemClock_Config();       // = mismo que en GL
+    MX_GPIO_Init();             // = mismo que en GL
+    MX_DMA_Init();              // = mismo que en GL
+    MX_DAC_Init();              // = mismo que en GL
+    MX_USART3_UART_Init();      // = mismo que en GL
 
-    // Mapeo lineal
-    long double scale = (val - minVal) * (4095.0L / rango);
+    /* ---- calculamos m y llenamos históricos ---- */
+    m = (int)(LM/DT); if(m>MAX_M) m = MAX_M;
+    for(int i=0;i<=m;i++){ t_hist[i] = -DT*i; x_hist[i]=y_hist[i]=z_hist[i]=0.0L; }
+    x_hist[0]=0.1L; y_hist[0]=0.1L; z_hist[0]=0.1L; t_hist[0]=0.0L;
+    idx_current=0; step_count=0;
 
-    // Saturación en [0, 4095]
-    if (scale < 0.0L)    scale = 0.0L;
-    if (scale > 4095.0L) scale = 4095.0L;
+    HAL_DAC_Start(&hdac,DAC_CHANNEL_1);
+    HAL_DAC_Start(&hdac,DAC_CHANNEL_2);
+    enviar_msj("\r\n*** EFORK Frac + UART IT ***\r\n");
 
-    return (uint32_t) scale;
-}
-
-
-/**
-  * @brief Envía un mensaje por UART con interrupción (no bloqueante).
-  *        Si la UART está ocupada, descarta (en un sistema real, podrías encolar).
-  */
-static void enviar_mensaje(const char *msg)
-{
-    if(uart_busy == 0)
-    {
-        uart_busy = 1;
-        strncpy(tx_buffer, msg, sizeof(tx_buffer)-1);
-        tx_buffer[sizeof(tx_buffer)-1] = '\0';
-        HAL_UART_Transmit_IT(&huart3,
-                             (uint8_t*)tx_buffer,
-                             strlen(tx_buffer));
-    }
-    else
-    {
-        // UART ocupada: descartar o encolar
+    while(1){
+        efork_step();
+        HAL_Delay(10);   /* ~100 Hz */
     }
 }
 
-/**
-  * @brief Callback al terminar la transmisión por IT UART.
-  */
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if(huart == &huart3)
-    {
-        uart_busy = 0;
-    }
-}
-/* USER CODE END 0 */
+/* ---------- El resto de funciones (SystemClock_Config, MX_xxx_Init, etc.)
+ * ------------ son EXACTAMENTE las mismas que en tu archivo GL -------------- */
 
 /**
   * @brief  The application entry point.
