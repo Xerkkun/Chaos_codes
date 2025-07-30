@@ -13,6 +13,8 @@
   ******************************************************************************
   */
 /* USER CODE END Header */
+
+
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "string.h"
@@ -43,7 +45,6 @@
 
 // Máximo tamaño de ventana de memoria
 #define MAX_M     10000  // Ajusta según RAM disponible
-
 
 // Dimensión del sistema Lorenz
 #define D         3
@@ -329,7 +330,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim2);
 
-    /* USER CODE BEGIN 2 */
+
 
     // 1) Calcula m = Lm / DT, y si excede MAX_M lo limitamos
     m = (int)(Lm / DT);
