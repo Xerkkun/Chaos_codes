@@ -1,0 +1,41 @@
+Placa: NUCLEO-F746ZG
+
+Periféricos
+
+Analog -> DAC
+    Activar las siguientes opciones:
+        OUT1 Configuration
+        OUT2 Configuration
+
+    Parameter Settings -> DAC Out1 Settings
+        Cambiar la opción del disparo
+        Trigger Timer 2 Trigger Out event
+
+    Parameter Settings -> DAC Out2 Settings
+        Cambiar la opción del disparo
+        Trigger Timer 2 Trigger Out event   
+
+    DMA Settings
+    Add DAC1 -> Mode Circular -> Data Width: Word
+    Add DAC2 -> Mode Circular -> Data Width: Word
+
+Clock Configuration -> APB1 Timer clocks (MHz) -> 72 (Fracuencia base del Timer 2) 
+Timers -> TIM2
+    Clock Source -> Internal Clock
+
+    Configuration -> Parameter Settings
+        Prescaler (PSC - 16 bits value) -> 72-1 (Dividiendo el reloj base 72 veces = 1 MHz)
+        Counter Period (AutoReload Register - 32 bits value) -> 100 (Subdivsión del Prescaler, dividiendo 1 MHz entre 100 = 1000kHz Frecuencia base de trabajo)
+        Internal Clock -> No Division
+        
+        Trigger Output (TRGO) Parameters
+        Trigger Event Selection TRGO -> Update Event
+
+
+Connectivity -> USART3 (Configurado por defecto en la tarjeta)
+    Configuration -> Parameter Settings
+    Baud Rate -> 115200
+    NVIC Settings -> USART3 global interrupt -> Habilitar
+    DMA Settings -> Add -> USART3_RX y USART_TX
+
+
